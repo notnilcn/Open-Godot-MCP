@@ -8,12 +8,37 @@ the ``params`` dict. We route to the bridge via ``ctx.call(tool, action, params)
 from __future__ import annotations
 
 import functools
+import json
 from collections.abc import Callable
 
 from fastmcp import FastMCP
 
 from ..context import ServerContext
 from ..utils.error_codes import fail
+
+# The published signature for every tool. Kept explicit because functools.wraps
+# would otherwise copy an untyped lambda's signature over the wrapper's own.
+_TOOL_ANNOTATIONS = {"action": str, "params": dict | None, "return": dict}
+
+
+def coerce_params(params: object) -> dict:
+    """Normalize the ``params`` argument into a plain dict.
+
+    Clients may send the object itself or a JSON-encoded string, so accept both.
+    """
+    if params is None or params == "":
+        return {}
+    if isinstance(params, str):
+        try:
+            decoded = json.loads(params)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"params must be an object or a JSON object string: {e}") from e
+        if not isinstance(decoded, dict):
+            raise ValueError(f"params must be an object, got {type(decoded).__name__}")
+        return decoded
+    if isinstance(params, dict):
+        return dict(params)
+    raise ValueError(f"params must be an object, got {type(params).__name__}")
 
 
 def pop_instance_id(params: dict) -> tuple[dict, str | None]:
@@ -44,7 +69,7 @@ async def route_tool(
         blocked = guard_write(ctx)
         if blocked:
             return blocked
-    params = dict(params) if params else {}
+    params = coerce_params(params)
     params, iid = pop_instance_id(params)
     return await ctx.call(tool, action, params, instance_id=iid)
 
@@ -72,7 +97,7 @@ def make_tool(
                 if blocked:
                     return blocked
             try:
-                result: dict = await fn(action, params)
+                result: dict = await fn(action, coerce_params(params))
                 return result
             except TypeError as e:
                 return fail("INVALID_ARGUMENT", str(e))
@@ -80,6 +105,13 @@ def make_tool(
                 return fail("INVALID_ARGUMENT", str(e))
             except Exception as e:  # noqa: BLE001
                 return fail("INTERNAL_ERROR", f"{type(e).__name__}: {e}")
+
+        # functools.wraps copies __wrapped__ and __annotations__ off *fn*, which for
+        # make_simple_tool is an untyped lambda. inspect.signature() follows those, so
+        # FastMCP would publish action/params with no type at all -- and clients faced
+        # with an untyped param send it as a JSON string. Pin the real signature back.
+        wrapper.__annotations__ = dict(_TOOL_ANNOTATIONS)
+        del wrapper.__wrapped__
 
         mcp.tool(name=name, description=description)(wrapper)
         return wrapper

@@ -111,13 +111,26 @@ func _get_debugger() -> EditorDebuggerPlugin:
 
 
 func _capture_editor_viewport(viewport: String) -> Image:
-	var vp := EditorInterface.get_editor_main_screen()
+	# get_editor_main_screen() returns a VBoxContainer, not a Viewport. Calling
+	# get_texture() on it raises "Nonexistent function", which aborts this whole
+	# function before the DisplayServer fallback below can run. Ask
+	# EditorInterface for the real SubViewport of the requested editor instead.
+	var vp: Viewport = null
+	if viewport == "3d":
+		vp = EditorInterface.get_editor_viewport_3d()
+	else:
+		vp = EditorInterface.get_editor_viewport_2d()
+	if vp == null:
+		var base := EditorInterface.get_base_control()
+		if base:
+			vp = base.get_viewport()
 	if vp:
 		var tex: ViewportTexture = vp.get_texture()
 		if tex:
-			return tex.get_image()
-	var img := DisplayServer.screen_get_image(DisplayServer.SCREEN_PRIMARY)
-	return img
+			var img := tex.get_image()
+			if img:
+				return img
+	return DisplayServer.screen_get_image(DisplayServer.SCREEN_PRIMARY)
 
 
 func _resize_image(img: Image, max_width: int) -> Image:
