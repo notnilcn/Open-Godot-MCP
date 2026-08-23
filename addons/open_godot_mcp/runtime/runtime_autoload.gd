@@ -37,6 +37,12 @@ var _record_buffer: Array = []
 var _record_start_frame: int = 0
 var _replaying: bool = false
 
+# Synthetic cursor tracking. Injected mouse events never move the OS cursor,
+# and the root viewport's get_mouse_position() reads the OS cursor, so the
+# only truthful "current position" for injected input is one we keep ourselves.
+var _last_mouse_pos := Vector2.ZERO
+var _last_mouse_pos_valid := false
+
 # Standalone WebSocket server mode
 var _standalone_mode := false
 var _ws_tcp: TCPServer = null
@@ -63,8 +69,11 @@ func _ready() -> void:
 	# Register a custom logger to capture all print/error output.
 	OS.add_logger(_McpLogger.new(self))
 	# Boot beacon — tells the editor we're ready to receive calls.
+	# Carries [pid, cmdline_args] so the editor can tell multiple game
+	# instances apart (Debug → Run Multiple Instances) and label each
+	# debugger session with the launch args (e.g. per-instance --p1/--p2).
 	if EngineDebugger.is_active():
-		EngineDebugger.send_message("ogm:hello", [])
+		EngineDebugger.send_message("ogm:hello", [OS.get_process_id(), OS.get_cmdline_args()])
 	# Standalone mode: if OGM_GAME_PORT env is set, start a WebSocket server
 	# so the MCP server can call us directly (no editor debugger needed).
 	var game_port_str := OS.get_environment("OGM_GAME_PORT")
@@ -468,23 +477,76 @@ func _input_key(params: Dictionary) -> Dictionary:
 	return _EC.ok()
 
 
+## Converts a caller-supplied point into the window pixel space that mouse
+## events are delivered in. Callers pass `coords: "viewport"` when the point
+## came from a node rect or godot_runtime_state -- those are in the stretched
+## design space, which only equals window pixels when stretch is disabled.
+func _to_window_space(point: Vector2, coords: String) -> Vector2:
+	if coords != "viewport":
+		return point
+	var vp := get_viewport()
+	if vp == null:
+		return point
+	return vp.get_screen_transform() * point
+
+
 func _input_mouse_button(params: Dictionary) -> Dictionary:
 	var button_str: String = params.get("button", "MOUSE_BUTTON_LEFT")
 	var position: Dictionary = params.get("position", {"x": 0, "y": 0})
 	var pressed: bool = params.get("pressed", true)
+	var coords: String = params.get("coords", "window")
 	var event := InputEventMouseButton.new()
 	event.button_index = _mouse_button_index(button_str)
-	event.position = Vector2(float(position.get("x", 0)), float(position.get("y", 0)))
+	var pos := _to_window_space(
+		Vector2(float(position.get("x", 0)), float(position.get("y", 0))), coords
+	)
+	event.position = pos
+	# Handlers that read global_position (and Viewport's own GUI picking when
+	# the event is re-dispatched) see (0, 0) unless this is set explicitly.
+	event.global_position = pos
 	event.pressed = pressed
+	# A click implies the cursor is at the click point.
+	_last_mouse_pos = pos
+	_last_mouse_pos_valid = true
 	Input.parse_input_event(event)
 	return _EC.ok()
 
 
 func _input_mouse_motion(params: Dictionary) -> Dictionary:
-	var delta: Dictionary = params.get("delta", {"x": 0, "y": 0})
 	var button_mask: Array = params.get("button_mask", [])
+	var coords: String = params.get("coords", "window")
 	var event := InputEventMouseMotion.new()
-	event.relative = Vector2(float(delta.get("x", 0)), float(delta.get("y", 0)))
+	if params.has("delta"):
+		var delta: Dictionary = params.get("delta", {"x": 0, "y": 0})
+		event.relative = Vector2(float(delta.get("x", 0)), float(delta.get("y", 0)))
+	# `position` was previously ignored entirely, so the cursor could never be
+	# moved to an absolute point -- hover and drag automation were impossible.
+	var pos: Vector2
+	if params.has("position"):
+		var position: Dictionary = params.get("position", {"x": 0, "y": 0})
+		pos = _to_window_space(
+			Vector2(float(position.get("x", 0)), float(position.get("y", 0))), coords
+		)
+	else:
+		# Absent `position`, move relative to the last injected position. The
+		# OS cursor (which get_mouse_position() reads) is only a usable starting
+		# point before the first injection.
+		if not _last_mouse_pos_valid:
+			# get_mouse_position() is viewport-space; lift it to window space
+			# before adding `relative` so both terms are in the same units.
+			var vp := get_viewport()
+			_last_mouse_pos = vp.get_screen_transform() * vp.get_mouse_position()
+			_last_mouse_pos_valid = true
+		pos = _last_mouse_pos + event.relative
+	if not params.has("delta"):
+		# Viewport starts a drag by accumulating mm.relative until it exceeds
+		# the drag threshold, so an absolute move must report the distance from
+		# the previous position -- with relative (0, 0) drags can never start.
+		event.relative = pos - _last_mouse_pos if _last_mouse_pos_valid else Vector2.ZERO
+	event.position = pos
+	event.global_position = pos
+	_last_mouse_pos = pos
+	_last_mouse_pos_valid = true
 	var mask := 0
 	for b in button_mask:
 		mask |= _mouse_button_mask(b)

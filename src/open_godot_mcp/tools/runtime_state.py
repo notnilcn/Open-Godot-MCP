@@ -16,5 +16,5 @@ def register_runtime_state_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_runtime_state",
-        "Observe running game state (auto-allow). Actions: digest(groups?),inspect(node_path,properties?),watch(node_path,property,duration_ms?),signals(node_path?,since_ms?).",
+        "Observe running game state (auto-allow). Actions: digest(groups?),inspect(node_path,properties?),watch(node_path,property,duration_ms?),signals(node_path?,since_ms?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
     )

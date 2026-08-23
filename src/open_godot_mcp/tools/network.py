@@ -31,7 +31,7 @@ def register_network_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_network",
-        "Multiplayer game testing. Actions: launch_instance(role,scene?,args?),list_instances,switch,terminate,simulate_peer,network_condition,sync_state,rpc_call.",
+        "Multiplayer game testing. Actions: launch_instance(role,scene?,args?),list_instances,switch,terminate,simulate_peer,network_condition,sync_state,rpc_call. For the runtime actions against the PIE game, params.instance=N (1-based, godot_game instances lists them) targets one editor-run instance; default is the first.",
     )
     async def godot_network(action: str, params: dict | None = None) -> dict:
         params = params or {}

@@ -16,5 +16,5 @@ def register_profiler_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_profiler",
-        "Performance profiling (auto-allow, game must run). Actions: snapshot,series(duration_ms?,metrics?),spikes(threshold_ms?).",
+        "Performance profiling (auto-allow, game must run). Actions: snapshot,series(duration_ms?,metrics?),spikes(threshold_ms?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
     )

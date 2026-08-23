@@ -18,5 +18,5 @@ def register_game_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_game",
-        "Game lifecycle. Actions: play(scene?,frozen?),stop,pause,resume,status.",
+        "Game lifecycle. Actions: play(scene?,frozen?),stop,pause,resume,status,instances. Multi-instance (editor Run Multiple Instances): instances lists PIE game instances; pass params.instance=N (1-based) to status/pause/resume to target one — default is the first instance.",
     )

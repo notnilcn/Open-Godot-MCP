@@ -3,11 +3,13 @@ extends RefCounted
 ## Game handler — godot_game / godot_game_time.
 ## Docs: 02-Tools/Game-Control.md
 ##
-## godot_game: play, stop, pause, resume, status
+## godot_game: play, stop, pause, resume, status, instances
 ## godot_game_time: freeze, unfreeze, step, step_until
 ##
 ## Runtime operations (freeze/step/step_until/input) are forwarded to the
-## runtime autoload via the debugger channel.
+## runtime autoload via the debugger channel. When the editor runs multiple
+## game instances, params.instance (1-based launch order) selects the target;
+## "instances" lists them. Omitted/0 targets the first instance.
 
 const _EC = preload("res://addons/open_godot_mcp/utils/error_codes.gd")
 
@@ -27,11 +29,13 @@ func _handle_game(action: String, params: Dictionary) -> Dictionary:
 		"stop":
 			return _stop()
 		"pause":
-			return await _pause()
+			return await _pause(params)
 		"resume":
-			return await _resume()
+			return await _resume(params)
 		"status":
-			return await _status()
+			return await _status(params)
+		"instances":
+			return _instances()
 		_:
 			return _EC.fail("INVALID_ARGUMENT", "Unknown action: %s" % action)
 
@@ -75,50 +79,87 @@ func _stop() -> Dictionary:
 	return _EC.ok()
 
 
-func _pause() -> Dictionary:
-	return await _call_runtime_game_time("pause", {})
+func _pause(params: Dictionary) -> Dictionary:
+	return await _call_runtime_game_time("pause", params)
 
 
-func _resume() -> Dictionary:
-	return await _call_runtime_game_time("resume", {})
+func _resume(params: Dictionary) -> Dictionary:
+	return await _call_runtime_game_time("resume", params)
 
 
-func _status() -> Dictionary:
+## List every PIE game instance (Debug → Run Multiple Instances) in launch
+## order — the 1-based "instance" index accepted by all runtime tools.
+func _instances() -> Dictionary:
+	if _bridge == null:
+		return _EC.fail("INTERNAL_ERROR", "Bridge not set")
+	var dbg: EditorDebuggerPlugin = _bridge.get_debugger()
+	if dbg == null:
+		return _EC.fail("RUNTIME_NOT_CONNECTED", "Debugger plugin not available")
+	var list: Array = dbg.get_instances()
+	return _EC.ok({"instances": list, "count": list.size(), "is_playing": EditorInterface.is_playing_scene()})
+
+
+func _status(params: Dictionary) -> Dictionary:
 	var is_playing := EditorInterface.is_playing_scene()
+	var instance := int(params.get("instance", 0))
 	var dbg_ready := false
 	if _bridge:
 		var dbg: EditorDebuggerPlugin = _bridge.get_debugger()
 		if dbg:
-			dbg_ready = dbg.is_game_ready()
+			dbg_ready = dbg.is_game_ready(instance)
 	var result := {"is_playing": is_playing, "runtime_connected": dbg_ready, "fps": 0}
+	if _bridge:
+		var dbg: EditorDebuggerPlugin = _bridge.get_debugger()
+		if dbg:
+			result["instances"] = dbg.get_instances()
+			result["instance_count"] = dbg.get_instance_count()
 	# FPS and viewport come from the game process — query the runtime
 	# autoload via the debugger channel. Fall back to 0 / unknown when
 	# the game isn't connected so `status` still works as a liveness probe.
 	if dbg_ready and _bridge:
 		var dbg: EditorDebuggerPlugin = _bridge.get_debugger()
-		var snap: Dictionary = await dbg.call_runtime("profiler", {"action": "snapshot"})
+		var snap: Dictionary = await dbg.call_runtime("profiler", {"action": "snapshot", "instance": instance})
 		if snap.get("ok", false):
 			result["fps"] = int(snap.get("fps", 0))
 			result["process_time_ms"] = float(snap.get("process_time", 0.0))
 			result["physics_time_ms"] = float(snap.get("physics_time", 0.0))
 			result["memory"] = int(snap.get("memory", 0))
 			result["draw_calls"] = int(snap.get("draw_calls", 0))
-		# Viewport size from the game's root viewport via exec.
+		# Viewport/window geometry from the game's root viewport via exec.
+		# NOTE: eval only produces a value for code with an explicit `return` --
+		# a bare expression yields null, which used to drop viewport_size from
+		# every status response. Keep the `return` and the flat int payload
+		# (Vector2/Vector2i do not survive the bridge as {x, y} reliably).
 		var vp: Dictionary = await dbg.call_runtime("exec", {
 			"action": "eval",
-			"code": "get_viewport().get_visible_rect().size",
+			"instance": instance,
+			"code": (
+				"var _vp := get_viewport()\n"
+				+ "var _vs := _vp.get_visible_rect().size\n"
+				+ "var _ws := DisplayServer.window_get_size()\n"
+				+ "var _sc := _vp.get_screen_transform().get_scale()\n"
+				+ "return {\"vw\": int(_vs.x), \"vh\": int(_vs.y),"
+				+ " \"ww\": int(_ws.x), \"wh\": int(_ws.y),"
+				+ " \"sx\": float(_sc.x), \"sy\": float(_sc.y)}"
+			),
 		})
 		if vp.get("ok", false):
 			var vp_result: Variant = vp.get("result", null)
-			if vp_result is Dictionary and vp_result.has("x"):
-				result["viewport_size"] = {"width": int(vp_result["x"]), "height": int(vp_result["y"])}
+			if vp_result is Dictionary and vp_result.has("vw"):
+				# viewport_size is the design/stretch space that node rects and
+				# godot_runtime_state report in; window_size is the pixel space
+				# godot_input mouse coordinates land in. They differ whenever
+				# display/window/stretch is active -- input_scale converts.
+				result["viewport_size"] = {"width": int(vp_result["vw"]), "height": int(vp_result["vh"])}
+				result["window_size"] = {"width": int(vp_result["ww"]), "height": int(vp_result["wh"])}
+				result["input_scale"] = {"x": float(vp_result["sx"]), "y": float(vp_result["sy"])}
 	return _EC.ok(result)
 
 
 func _handle_game_time(action: String, params: Dictionary) -> Dictionary:
 	match action:
 		"freeze":
-			return await _call_runtime_game_time("freeze", {})
+			return await _call_runtime_game_time("freeze", params)
 		"unfreeze":
 			return await _call_runtime_game_time("unfreeze", params)
 		"step":
@@ -126,9 +167,9 @@ func _handle_game_time(action: String, params: Dictionary) -> Dictionary:
 		"step_until":
 			return await _call_runtime_game_time("step_until", params)
 		"pause":
-			return await _call_runtime_game_time("pause", {})
+			return await _call_runtime_game_time("pause", params)
 		"resume":
-			return await _call_runtime_game_time("resume", {})
+			return await _call_runtime_game_time("resume", params)
 		_:
 			return _EC.fail("INVALID_ARGUMENT", "Unknown action: %s" % action)
 

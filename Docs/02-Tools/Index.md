@@ -120,7 +120,7 @@ godot_<domain>           當工具本身明顯是 read 或 write 時省略 acces
 | `godot_debugger` | mixed | [Diagnostics.md](Diagnostics.md) |
 | `godot_lsp` | read | [Diagnostics.md](Diagnostics.md) |
 | `godot_profiler` | read | [Diagnostics.md](Diagnostics.md) |
-| `godot_test` | mixed | [Test.md](Test.md) |
+| `godot_test` | mixed | [Test.md](code_examples/Open-Godot-MCP/Docs/02-Tools/Test.md) |
 | `godot_network` | mixed | [Network.md](Network.md) |
 | `godot_instance` | mixed | [Instance.md](Instance.md) |
 | `godot_filesystem` | mixed | [Filesystem.md](Filesystem.md) |

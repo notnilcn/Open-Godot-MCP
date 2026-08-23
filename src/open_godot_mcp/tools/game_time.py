@@ -16,6 +16,6 @@ def register_game_time_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_game_time",
-        "Deterministic clock control (gated). Actions: freeze,unfreeze,step(ms,inputs?),step_until(condition,timeout_ms?,interval_ms?).",
+        "Deterministic clock control (gated). Actions: freeze,unfreeze,step(ms,inputs?),step_until(condition,timeout_ms?,interval_ms?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
         is_write=True,
     )
