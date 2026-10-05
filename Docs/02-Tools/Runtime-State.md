@@ -38,4 +38,14 @@
 
 > **`eval` 的求值上下文**：`code` 在遊戲進程的 SceneTree 上下文內求值，`self` 指向 SceneTree 的 root viewport（即 `get_tree().root`）。可透過 autoload 單例名稱直接存取（如 `Player`、`GameState`，前提是它們是 autoload 或 root 的子節點），也可用 `get_tree()`、`Engine` 等全域 API。範例：`Player.add_to_group('mcp_watch')`（`Player` 是 autoload）、`get_tree().get_nodes_in_group('enemy')`。
 
+> **`eval` 座標回傳**：要拿座標給 `godot_input` 用時，回傳 flat `{"x","y"}` dict（`return {"x": int(p.x), "y": int(p.y)}`）——raw `Vector2` 在 bridge 編碼下不可靠，會靜默 corrupt 座標。Nested dict OK。
+
+> **`eval` 禁忌與除錯**：
+> - 禁止 `for`/`while`（會 timeout）——用 `map`/`filter` 或單節點存取；`find_children` scope 到最小 subtree，結果 `slice(0, N)`（broad traversal 幾百節點曾超過 15s）。
+> - **TIMEOUT 通常 = body errored**，不是 bridge hung：拼錯 function 會回 15s timeout，真 error 在 `godot_log errors`——每次 timeout 先查 log 再重試。
+> - 不要碰 `MeshInstance3D.mesh`（render-thread contention 會 stall）；偏好 transforms、`is_position_in_frustum`、physics raycast、screenshots。
+> - 需含空格的 node 名（如 `"Weapon - 0"`）要在 `get_node()` 裡 quote；同名 node 在多 container 各有一份時用 full container path，不要 bare `find_child`。
+> - C# export 屬性用 `get()`/`set()`（如 `rig.get("PitchDegrees")`），直接 member syntax 會失敗。
+> - 完整互動式 recipes 見 [../03-Realtime-Testing/Interactive-Playtest.md](../03-Realtime-Testing/Interactive-Playtest.md)。
+
 > **C# Godot**：`eval` 不適用於 C# 專案（C# 是編譯式）。見 [../08-CSharp-Support/Compatibility.md](../08-CSharp-Support/Compatibility.md)。

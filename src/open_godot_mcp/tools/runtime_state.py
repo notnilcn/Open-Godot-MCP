@@ -16,5 +16,8 @@ def register_runtime_state_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_runtime_state",
-        "Observe running game state (auto-allow). Actions: digest(groups?),inspect(node_path,properties?),watch(node_path,property,duration_ms?),signals(node_path?,since_ms?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
+        "Observe running game state (auto-allow). Actions: digest(groups?),inspect(node_path,properties?),watch(node_path,property,duration_ms?),signals(node_path?,since_ms?). "
+        "Prefer digest/inspect JSON over screenshots for logic bugs. Verify clicks/drags by reading state back (visible flips, hovered control, "
+        "gui_is_dragging()) in a follow-up call — injected input dispatches next frame. "
+        "Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
     )

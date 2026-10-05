@@ -16,5 +16,8 @@ def register_screenshot_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_screenshot",
-        "Screenshots saved to disk (auto-allow). Actions: game(max_width?,format?,quality?),editor(viewport?,max_width?),region(rect,max_width?,source?),burst(count?,duration_ms?,interval_ms?),cleanup(max_count?,max_age_hours?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first. Auto-rotation keeps last 50 (configurable via open_godot_mcp/screenshot_max_count) and deletes files older than 24h (configurable via open_godot_mcp/screenshot_max_age_hours); cleanup action forces immediate prune.",
+        "Screenshots saved to disk (auto-allow). Actions: game(max_width?,format?,quality?),editor(viewport?,max_width?),region(rect,max_width?,source?),burst(count?,duration_ms?,interval_ms?),cleanup(max_count?,max_age_hours?). "
+        "Screenshots are fallback/final-verification only — never for finding buttons (resolve via eval + .tscn paths). "
+        "A-B comparisons require a LIVE loop: confirm Engine.get_process_frames() advances first, or stale frames fake a no-change result. "
+        "Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first. Auto-rotation keeps last 50 (configurable via open_godot_mcp/screenshot_max_count) and deletes files older than 24h (configurable via open_godot_mcp/screenshot_max_age_hours); cleanup action forces immediate prune.",
     )

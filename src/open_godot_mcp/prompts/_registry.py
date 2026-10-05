@@ -14,7 +14,7 @@ from ..context import ServerContext
 def register_prompts(mcp: FastMCP, ctx: ServerContext) -> None:
     @mcp.prompt()
     def playtest(scene: str = "", frozen: bool = True) -> str:
-        """Complete deterministic playtest workflow.
+        """Complete playtest workflow (interactive UI driving + deterministic mode).
 
         Args:
             scene: res:// path to test scene, or "" for current editor scene.
@@ -22,62 +22,85 @@ def register_prompts(mcp: FastMCP, ctx: ServerContext) -> None:
         """
         scene_arg = f'"{scene}"' if scene else ""
         mode = "frozen=true" if frozen else "frozen=false"
-        return f"""# Deterministic Playtest Workflow
+        return f"""# Playtest Workflow (Interactive + Deterministic)
 
-You are about to run a deterministic playtest of the game. Follow these steps:
+You are about to playtest the running game end-to-end. Two complementary modes:
 
-1. **Start the game in deterministic mode**:
-   ```
-   godot_game play scene={scene_arg} {mode}
-   ```
-   Wait for runtime_ready=true. If false, poll godot_game status.
+- **A. Interactive UI driving** (anything a real player does: click buttons, drag items, type text) — recipes below.
+- **B. Deterministic mode** (freeze/step_until/digest) — for precise timing and logic verification.
 
-2. **Set up the test scene** (if needed):
-   ```
-   godot_exec eval code="Player.add_to_group('mcp_watch')"
-   ```
-   Use eval to grant items, skip to levels, spawn test entities.
+## A. Interactive UI driving
 
-3. **Step until a condition is met**:
-   ```
-   godot_game_time step_until condition="Player.is_on_floor()" timeout_ms=5000
-   ```
+Every tool takes `(action, params)`. Never screenshot-hunt buttons: UI positions are authored in the
+`.tscn` files, so resolve the node path to live coordinates with eval and inject input there.
+Screenshots are fallback / final visual verification only.
 
-4. **Observe state (cheap, no screenshot)**:
-   ```
-   godot_runtime_state digest
-   ```
-   Check positions, health, velocity via JSON — saves vision tokens.
+### Session start
 
-5. **Inject input at precise times**:
-   ```
-   godot_game_time step ms=500 inputs=[
-     {{type: "action", action: "move_right", pressed: true, at_ms: 0}},
-     {{type: "action", action: "jump", pressed: true, at_ms: 200}}
-   ]
-   ```
+1. `godot_health check` first. On BRIDGE_NOT_CONNECTED, launch the editor (the bridge auto-loads with it).
+2. `godot_editor_edit open_scene` takes `params: {{"path": ...}}` (NOT `scene`); only `godot_game play` takes `scene`.
+   Always pass `play scene={scene_arg} {mode}` explicitly — never rely on whatever scene is open.
+   Wait for `runtime_ready=true` (else poll `godot_game status`).
+3. Verify the expected in-world state before driving input (e.g. menu hidden + player node exists), pid-stamped
+   (see Standing rules). Logs: `godot_log get` / `godot_log errors`.
 
-6. **Verify the result**:
-   ```
-   godot_runtime_state digest
-   ```
-   Compare before/after to confirm the expected change occurred.
+### CLICK <node_path> — exactly two calls, no variations
 
-7. **Screenshot only if visual confirmation is needed**:
-   ```
-   godot_screenshot game max_width=1280 format="jpeg" quality=70
-   ```
+1. `godot_exec` `eval`: `var p = (get_node("<node_path>") as Control).get_global_rect().get_center(); return {{"x": int(p.x), "y": int(p.y)}}`
+   (Non-Control nodes: `(n as Node2D).get_global_position()` instead. Return a flat `{{"x","y"}}` dict — raw
+   Vector2 corrupts over the bridge. Never hardcode coordinates.)
+2. `godot_input` `sequence` — ONE call, press+release (default `frame_delay: 1` is what makes it land):
+   `params: {{"steps": [{{"type": "mouse_button", "params": {{"button": "MOUSE_BUTTON_LEFT", "pressed": true, "position": {{"x": X, "y": Y}}, "coords": "viewport"}}}}, {{"type": "mouse_button", "params": {{"button": "MOUSE_BUTTON_LEFT", "pressed": false, "position": {{"x": X, "y": Y}}, "coords": "viewport"}}}}]}}`
+   Do NOT split into separate press/release calls. Always `coords: "viewport"`.
 
-8. **Stop the game**:
-   ```
-   godot_game stop
-   ```
+### HOVER <node_path>
+
+`godot_input mouse_motion` to the rect center → NEXT call, eval `get_tree().root.gui_get_hovered_control()`
+and confirm it is the target (or its child). Never `get_viewport().get_mouse_position()` (reads the real OS cursor).
+
+### DRAG <pathA> -> <pathB>
+
+1. `mouse_motion` to A center. 2. `mouse_button` left press at A. 3. `mouse_motion` to B center WITH
+   `button_mask: ["MOUSE_BUTTON_LEFT"]` (this is what crosses the drag-start threshold) — verify
+   `get_tree().root.gui_is_dragging()`. 4. `mouse_button` left release at B.
+
+### PRESS / HOLD / TYPE
+
+- PRESS `<key>`: `godot_input key` press+release. Plain names (`Tab`, `E`, `Up`) — NOT `KEY_TAB` (silently no-ops).
+- HOLD `<key>`: press `pressed:true` → sleep locally (game keeps simulating) → release. Always re-read state after
+  (closed-loop); never assume a hold duration landed an exact angle/distance.
+- TYPE `<path> <text>`: eval `get_node("<path>").grab_focus()` → `godot_input text`.
+
+### Standing rules
+
+- Runtime tools (`godot_exec`/`godot_input`/`godot_runtime_state`/`godot_screenshot`/`godot_game_time`/`godot_profiler`)
+  target instance 1 unless `params: {{"instance": N}}`. `godot_game instances` lists them (pid, launch args, ready).
+  Drive instances sequentially, never batched. Pids change across `stop`/`play` — re-establish assumed state.
+- Prove routing with a pid stamp: include `OS.get_process_id()` in verification evals vs `godot_game instances`.
+- Drive closed-loop, never by wall-clock dead-reckoning. Injected input dispatches NEXT frame — verify in a follow-up call.
+- `sequence` timeout while plain `eval` still answers = stalled frame loop (sequence awaits `process_frame`; eval uses
+  the debugger channel). Diagnose: read `Engine.get_process_frames()` twice. Fix: `godot_game stop` + `play`.
+- No `for`/`while` in eval (timeouts) — use `map`/`filter` or single-node access; scope `find_children` narrowly and
+  slice results. An eval TIMEOUT usually means the body errored — check `godot_log errors` before retrying.
+  Avoid touching `MeshInstance3D.mesh` in eval. C# props via `get()`/`set()` (e.g. `rig.get("PitchDegrees")`).
+- When a recipe fails, check in order: (1) target + parent chain `visible`, (2) `gui_get_hovered_control()` after a
+  motion to the same point, (3) `godot_log errors`, (4) only then `godot_screenshot game`.
+
+## B. Deterministic verification
+
+1. `godot_exec eval code="Player.add_to_group('mcp_watch')"` — set up scene (grant items, skip levels, spawn entities).
+2. `godot_game_time step_until condition="Player.is_on_floor()" timeout_ms=5000` — wait for a condition.
+3. `godot_runtime_state digest` — cheap JSON observation (positions/health/velocity). Prefer over screenshots.
+4. Timed input: `godot_game_time step ms=500 inputs=[{{type: "action", action: "move_right", pressed: true, at_ms: 0}}, {{type: "action", action: "jump", pressed: true, at_ms: 200}}]`
+5. Re-`digest` and compare before/after. Screenshot (`game max_width=1280 format="jpeg" quality=70`) only for visual bugs.
+6. `godot_game stop` when done.
 
 **Key rules**:
 - Always check `ok` field in responses.
 - Use digest (JSON) over screenshots for logic bugs — saves 90% tokens.
-- Mouse coordinates are ACTUAL window pixels — call godot_game status for viewport_size first.
+- `coords: "viewport"` with eval-resolved coordinates; never hardcode window pixels.
 - resume (pause system) != unfreeze (time_scale). Use unfreeze to exit deterministic mode.
+- Full guide: Docs/03-Realtime-Testing/Interactive-Playtest.md
 """
 
     @mcp.prompt()

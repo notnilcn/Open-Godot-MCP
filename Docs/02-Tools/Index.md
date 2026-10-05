@@ -150,7 +150,7 @@ godot_<domain>           當工具本身明顯是 read 或 write 時省略 acces
 
 | Prompt | 參數 | 說明 |
 |--------|------|------|
-| `playtest` | `scene?, frozen?` | 完整 playtest 流程 |
+| `playtest` | `scene?, frozen?` | 完整 playtest 流程（互動式 UI 驅動 CLICK/HOVER/DRAG + 確定性 freeze/step/digest；詳見 [Interactive-Playtest](../03-Realtime-Testing/Interactive-Playtest.md)） |
 | `debug_breakpoint` | `script, line, condition?` | 中斷點除錯流程 |
 | `network_test` | `peer_count, scene?` | 連線遊戲測試流程 |
 | `build_scene` | `description` | 從描述建構場景 |

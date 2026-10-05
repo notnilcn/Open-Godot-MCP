@@ -39,6 +39,7 @@
 
 - [Guide.md](03-Realtime-Testing/Guide.md) — 概念、時鐘控制、`_mcp_state()`、模式切換
 - [Examples.md](03-Realtime-Testing/Examples.md) — 4 個完整工作流範例
+- [Interactive-Playtest.md](03-Realtime-Testing/Interactive-Playtest.md) — 互動式 UI 驅動（CLICK/HOVER/DRAG/PRESS/HOLD/TYPE、座標解析、eval 禁忌、multi-instance 規則）
 
 ## 04-Token-Efficiency — Token 效率
 

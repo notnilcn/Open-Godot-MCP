@@ -16,6 +16,10 @@ def register_game_time_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_game_time",
-        "Deterministic clock control (gated). Actions: freeze,unfreeze,step(ms,inputs?),step_until(condition,timeout_ms?,interval_ms?). Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
+        "Deterministic clock control (gated). Actions: freeze,unfreeze,step(ms,inputs?),step_until(condition,timeout_ms?,interval_ms?). "
+        "sequence/input-step timeouts while plain eval still answers mean the frame loop stalled (input awaits process_frame; eval uses the debugger channel) — "
+        "diagnose by reading Engine.get_process_frames() twice; no advance = stalled, fix with godot_game stop+play. "
+        "Drive closed-loop (re-read state after each drive), never by wall-clock dead-reckoning. "
+        "Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
         is_write=True,
     )

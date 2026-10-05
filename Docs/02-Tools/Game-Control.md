@@ -17,9 +17,13 @@
 | `status` | read | — | `{is_playing, runtime_connected, fps, viewport_size?}` | 執行狀態（`viewport_size` = 實際遊戲視窗像素尺寸 `{width, height}`，僅遊戲執行時回傳） |
 
 > **`scene` 參數**：
-> - 不指定 = 用當前編輯器中開啟的場景
+> - 不指定 = 用當前編輯器中開啟的場景（playtest 不要依賴這個——永遠明確傳 scene）
 > - `"main"` = 用 `project.godot` 設定的主場景
 > - `"res://path/to/scene.tscn"` = 用指定路徑的場景
+>
+> **參數名陷阱**：`godot_editor_edit open_scene` 吃的是 `params: {"path": ...}`（傳 `scene` 會報 `INVALID_ARGUMENT: path required`）；只有 `godot_game play` 吃 `scene`。
+
+> **Session 驗證**：`play` 後等 `runtime_ready=true`（否則 poll `status`），再驗證預期的 in-world state（menu hidden + player node 存在）才驅動 input。Pids 在 `stop`/`play` 後會變——assumed state（camera pose、player position）要重建；verification eval 帶 `OS.get_process_id()` 對照 `godot_game instances`（見 [Interactive-Playtest §3](../03-Realtime-Testing/Interactive-Playtest.md)）。
 
 > **`pause` vs `freeze` 的差異**：
 > - `godot_game pause` → `get_tree().paused = true`：Godot 的 pause 系統，停止 `_process`/`_physics_process`，但 pause-aware 節點（`process_mode != INHERIT`）仍可運作。適合：暫停選單、切換到編輯器操作。
@@ -54,5 +58,7 @@
 > - `{type: "text", text, at_ms}` — 文字輸入
 
 > **多實例**：所有工具可選 `instance_id` 參數指定目標實例，不指定則用作用中實例。詳見 [../01-Architecture/Multi-Instance.md](../01-Architecture/Multi-Instance.md)。
+
+> **Sequence timeout = 查 frame loop**：`input sequence` 會在 steps 間 await `process_frame`，loop stalled 時 sequence timeout、但 plain `eval` 還活著（debugger channel 分開服務）。診斷：讀兩次 `Engine.get_process_frames()`，沒前進 = stalled，解法只有 `stop` + `play`。Closed-loop 驅動，不要 wall-clock dead-reckoning。
 
 > **解析度不匹配問題**：Godot 的「設計解析度」（`display/window/size/viewport_width/height`）與遊戲啟動時的「實際視窗尺寸」可能不同——視窗模式、stretch mode、HiDPI 縮放都會造成差異。`godot_game status` 回傳的 `viewport_size` 是**實際視窗像素尺寸**，滑鼠座標以此為準（見 [Input.md](Input.md) §座標系統）。AI 發送滑鼠輸入前應先查 `viewport_size`，不要假設與設計解析度相同。詳見 [../03-Realtime-Testing/Guide.md](../03-Realtime-Testing/Guide.md) §解析度與座標系統。

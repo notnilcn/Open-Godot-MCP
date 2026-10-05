@@ -3,6 +3,7 @@
 > `godot_screenshot` — 視覺回饋，只在值得花 token 時用。
 
 > 省 token 策略見 [../04-Token-Efficiency/Guide.md](../04-Token-Efficiency/Guide.md)。
+> 互動式 playtest 的截圖紀律（fallback / 最終驗證才用，不要截圖找按鈕）見 [../03-Realtime-Testing/Interactive-Playtest.md](../03-Realtime-Testing/Interactive-Playtest.md)。
 
 ---
 
@@ -17,6 +18,8 @@
 | `cleanup` | `max_count?, max_age_hours?` | `{deleted_count, remaining_count}` | 手動清理截圖目錄。不傳參數時使用 ProjectSettings 預設值（見下方「自動清理」）。`max_count` 覆蓋本次輪轉上限（`0` = 不輪轉）；`max_age_hours` 覆蓋本次過期時長（`0` = 不過期淘汰）。回傳 `deleted_count`（本次刪除數）與 `remaining_count`（剩餘數） |
 
 > **`dimensions` = 實際視窗像素尺寸**：`game` action 的 `dimensions` 反映**實際遊戲視窗的像素尺寸**，不是專案的設計解析度。若專案設定 1920×1080 但視窗以 1280×720 開啟，截圖尺寸為 1280×720。AI 分析截圖時應以 `dimensions` 為準，不要假設與設計解析度相同（見 [Input.md](Input.md) §座標系統）。
+
+> **A-B 比對要求 LIVE loop**：先確認 `Engine.get_process_frames()` 在前進再信任比對結果——stalled loop 會給 byte-identical stale frames，偽造出「toggle 沒變化」。Recipe 失敗時依序查：(1) `visible` chain → (2) `gui_get_hovered_control()` → (3) `godot_log errors` → (4) 最後才截圖。
 
 > **省 token 設計**：
 > - 預設存檔到磁碟，回傳路徑（不回傳 base64，避免吃 context）

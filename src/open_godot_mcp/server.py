@@ -44,7 +44,10 @@ def build_mcp(ctx: ServerContext) -> FastMCP:
             "All tools return {ok: bool, ...}; check ok before using results. "
             "Godot types are JSON objects: Vector2={x,y}, Vector3={x,y,z}, Color={r,g,b,a}. "
             "Node paths look like /root/...; resource paths look like res://... "
-            "Use godot_health check to verify connectivity before other tools."
+            "Use godot_health check to verify connectivity before other tools. "
+            "Every tool takes (action, params); runtime tools accept params.instance=N (1-based, see godot_game instances). "
+            "For UI playtesting resolve Control centers via godot_exec eval + coords:viewport and drive one godot_input sequence per click/drag — "
+            "see the playtest prompt and Docs/03-Realtime-Testing/Interactive-Playtest.md for the exact CLICK/HOVER/DRAG recipes."
         ),
     )
     register_all_tools(mcp, ctx)

@@ -17,7 +17,13 @@ def register_exec_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_exec",
-        "Execute GDScript in running game (gated). Actions: eval(code,await?),call(node_path,method,args?),assert(condition,description?,await?). Disabled if --no-eval. Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
+        "Execute GDScript in running game (gated). Actions: eval(code,await?),call(node_path,method,args?),assert(condition,description?,await?). Disabled if --no-eval. "
+        "Coordinate evals must return a flat {\"x\",\"y\"} dict (e.g. var p=center; return {\"x\":int(p.x),\"y\":int(p.y)}) — "
+        "raw Vector2 does not survive bridge encoding. No for/while loops in eval (they time out); use map/filter or single-node access, "
+        "scope find_children to the smallest subtree and slice results. An eval TIMEOUT usually means the body errored — "
+        "check godot_log errors before retrying. Avoid touching MeshInstance3D.mesh resources in eval; prefer transforms, "
+        "is_position_in_frustum, physics raycasts. C# export props are reachable via get()/set() (e.g. rig.get(\"PitchDegrees\")), not direct member syntax. "
+        "Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first.",
         is_write=True,
     )
     async def godot_exec(action: str, params: dict | None = None) -> dict:

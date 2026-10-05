@@ -3,6 +3,7 @@
 > `godot_input` — 向執行中的遊戲注入輸入。
 
 > 詳細工作流見 [../03-Realtime-Testing/Guide.md](../03-Realtime-Testing/Guide.md)。
+> 互動式 UI 操作（CLICK/HOVER/DRAG/PRESS/HOLD/TYPE 完整 recipes）見 [../03-Realtime-Testing/Interactive-Playtest.md](../03-Realtime-Testing/Interactive-Playtest.md)。
 
 ---
 
@@ -16,11 +17,17 @@
 | `mouse_motion` | `position? \| delta, button_mask?, coords?` | `{ok}` | 滑鼠移動。給 `position` 為絕對移動，給 `delta` 為相對移動。`button_mask?` 是移動時按住的滑鼠按鈕清單（字串陣列，同 `button` 格式，如 `["MOUSE_BUTTON_LEFT"]` 表示拖曳），不指定時為無按鈕 |
 | `joypad` | `device, control, index, value?` | `{ok}` | 手把按鈕/搖桿 |
 | `text` | `text` | `{ok}` | 文字輸入（unicode） |
+| `sequence` | `steps: [{type, ...params, frame_delay?}], frame_delay?` | `{ok}` | 複合輸入序列。`steps` 每個元素是 `{type, params, frame_delay?}`——`type` 對應上表 action 名稱（`mouse_button`/`mouse_motion`/`key`/`action`/`text`/`joypad`），`params` 即該 action 的參數。CLICK 必須用**單一** `sequence` 包 press+release（default `frame_delay: 1` 才是它像真人點擊的原因），不要拆成兩次 calls |
+
+> **CLICK/DRAG 固定寫法**（完整版見 Interactive-Playtest.md §2）：
+> - CLICK：先 `godot_exec eval` 取 `(node as Control).get_global_rect().get_center()` → flat `{"x","y"}`，再**一個** `sequence` press+release，同座標 + `coords: "viewport"`。
+> - DRAG：`mouse_motion` 到起點 → `mouse_button` 按下 → `mouse_motion` 帶 `button_mask: ["MOUSE_BUTTON_LEFT"]` 到終點（跨過 drag threshold 的關鍵）→ `mouse_button` 放開；用 `gui_is_dragging()` 驗證。
+> - HOVER 後用 `get_tree().root.gui_get_hovered_control()` 驗證（下一個 call 再查，input 下一幀才派發）。
 
 > **拖曳注意**：只給 `position` 的絕對移動會自動合成 `relative`（引擎靠累積 `relative` 超過拖曳門檻才啟動拖曳；若 `relative` 為 0 拖曳永不開始）。拖曳流程：`mouse_motion` 到起點 → `mouse_button` 按下 → `mouse_motion` 帶 `button_mask` 到終點 → `mouse_button` 放開。另外，root viewport 的 `get_mouse_position()` 讀的是 OS 真實游標，永遠不反映注入位置——驗證注入請用 `gui_get_hovered_control()`。注入事件在下一帧才派發（accumulated input），hover/拖曳狀態要在下一次呼叫再查。
 
 > **參數格式**：
-> - `key`：Godot Key 常數字串，如 `"KEY_SPACE"`、`"KEY_A"`、`"KEY_ESCAPE"`、`"KEY_F1"`
+> - `key`：plain key 名，如 `"Tab"`、`"E"`、`"Up"`、`"Space"`——**不要**用 Godot enum 常數（`"KEY_TAB"` 會靜默 no-op）。`modifiers` 另用字串陣列表示
 > - `modifiers`：字串陣列，如 `["ctrl", "shift", "alt", "meta"]`
 > - `button`（mouse_button）：Godot MouseButton 常數字串，如 `"MOUSE_BUTTON_LEFT"`、`"MOUSE_BUTTON_RIGHT"`、`"MOUSE_BUTTON_WHEEL_UP"`
 > - `button_mask`（mouse_motion）：字串陣列，同 `button` 格式
