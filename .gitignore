@@ -15,12 +15,10 @@ build/
 dist/
 
 # Agent Harness Deploy (AHD) — personal AI tooling configs, not part of the open-source product
-.agents/
 .devin/
 .codex/
 .hermes/
 .windsurf/
-AGENTS.md
 *.ahd_managed
 .agents/qa_fix/
 
