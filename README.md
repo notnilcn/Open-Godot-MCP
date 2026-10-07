@@ -207,6 +207,42 @@ Config 預設存於 `~/.open_godot_mcp/config.json`（user home，不在 git rep
 
 ---
 
+## 建議做法：專案專屬的呼叫鏈帳本（Call-chain ledger）
+
+MCP server 提供通用工具，但**每個專案都有自己的一套操作流程**——例如「從主選單進入戰役並啟動區域」、「載入 golden 場景後 pause/step」、「開地圖編輯器」。這些序列只有專案的開發者知道，也會隨專案演進。
+
+建議在**消費端專案**維護一份呼叫鏈帳本，例如 `.opencode/chains/`（一鏈一檔）或單一 `MCP_CHAINS.md`，並在專案的 agent 規範 / `AGENTS.md` 指向它。每個鏈條目至少記錄：
+
+| 欄位 | 用途 |
+|------|------|
+| `applies_when` | 什麼時候該用這條鏈 |
+| `preconditions` | 前置條件：editor/bridge 狀態、環境變數（例如需要 `DISPLAY` 的 server）、存檔/登入狀態 |
+| `tools` | 會用到的 MCP 工具 |
+| `steps` | 確切的工具呼叫序列（可直接複製的 JSON） |
+| `success signals` | 怎麼確認鏈成功 |
+| `failure modes` | 已知踩雷點與替代路徑 |
+| `last_verified` | 最後一次實際驗證的日期 / commit / run artifact |
+
+**為什麼要這樣做**：LLM 每次重新推導同一串工具呼叫，會浪費 token 與來回；帳本讓 agent 第一次就套用已驗證的序列，失敗時也能對照已知的 failure modes 快速定位。
+
+**為什麼不放在這裡**：帳本是專案知識，不屬於 MCP 的通用文件；本 README 只提出建議，不內建任何專案資料，`Docs/`、工具說明與內建 prompt 維持通用性。
+
+範例標頭：
+
+```markdown
+---
+id: enter-campaign
+applies_when: 從主選單進入戰役、選擇星球與區域並啟動
+preconditions: [editor bridge 連線, game.tscn 已播放, runtime_connected]
+tools: [godot_health, godot_game, godot_exec, godot_input]
+last_verified: 2026-10-07 <commit> (run <run-dir>)
+---
+## Steps
+1. ...
+```
+
+---
+
 ## 快速開始
 
 ### 1. 安裝 MCP Server
