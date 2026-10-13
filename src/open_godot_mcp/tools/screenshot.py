@@ -20,6 +20,7 @@ def register_screenshot_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         "Screenshots are fallback/final-verification only — never for finding buttons (resolve via eval + .tscn paths). "
         "A-B comparisons require a LIVE render: check Engine.get_frames_drawn() advances across two evals (a pinned counter while "
         "Time.get_ticks_msec() advances usually means nothing is drawn and captures repeat byte-identical — restart with godot_game stop+play; EXCEPTION: for the editor-embedded game a pinned counter proves nothing either way (seen pinned at 2 with live captures, and stale boot-menu captures with healthy status fps) — always cross-check capture content against structured state). "
+        "Byte-identical captures are EXPECTED on a fully static scene — identity alone is not staleness; prove the capture path is live by mutating a node the shell really draws (e.g. modulate) and re-capturing. "
         "Call get_window().grab_focus() before a capture (move_to_foreground() is deprecated and logs an ERROR). The editor-embedded game "
         "window cannot be resized (window_set_size no-ops) — record DisplayServer.window_get_size() rather than assuming a requested size. "
         "Multi-instance: params.instance=N (1-based, godot_game instances lists them) targets one PIE game instance; default is the first. Auto-rotation keeps last 50 (configurable via open_godot_mcp/screenshot_max_count) and deletes files older than 24h (configurable via open_godot_mcp/screenshot_max_age_hours); cleanup action forces immediate prune.",

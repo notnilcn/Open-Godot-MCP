@@ -16,5 +16,5 @@ def register_health_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_health",
-        "Connection health. Actions: check,diagnostics. Call first to verify connectivity.",
+        "Connection health. Actions: check,diagnostics. Call first to verify connectivity. After an editor (re)start the bridge can stay unreachable for 30-60 s while it boots — retry check before diagnosing; a stale previous editor can hold the configured port while a relaunch silently binds another one — kill the old editor before relaunching.",
     )

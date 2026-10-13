@@ -23,7 +23,7 @@
 >
 > **參數名陷阱**：`godot_editor_edit open_scene` 吃的是 `params: {"path": ...}`（傳 `scene` 會報 `INVALID_ARGUMENT: path required`）；只有 `godot_game play` 吃 `scene`。
 
-> **Session 驗證**：`play` 後等 `runtime_ready=true`（否則 poll `status`），再驗證預期的 in-world state（menu hidden + player node 存在）才驅動 input。Pids 在 `stop`/`play` 後會變——assumed state（camera pose、player position）要重建；verification eval 帶 `OS.get_process_id()` 對照 `godot_game instances`（見 [Interactive-Playtest §3](../03-Realtime-Testing/Interactive-Playtest.md)）。
+> **Session 驗證**：`play` 後等 `runtime_ready=true`（否則 poll `status`），再驗證預期的 in-world state（menu hidden + player node 存在）才驅動 input。Pids 在 `stop`/`play` 後會變——assumed state（camera pose、player position）要重建；verification eval 帶 `OS.get_process_id()` 對照 `godot_game instances`（見 [Interactive-Playtest §3](../03-Realtime-Testing/Interactive-Playtest.md)）。`play` 後也要等 frame loop 真的在跑（poll `Engine.get_process_frames() > 0`）再注入 input；restart 後 sim 預設 UNPAUSED、會在 round-trip 之間繼續推進——step/load 量測前先 pause。
 
 > **`pause` vs `freeze` 的差異**：
 > - `godot_game pause` → `get_tree().paused = true`：Godot 的 pause 系統，停止 `_process`/`_physics_process`，但 pause-aware 節點（`process_mode != INHERIT`）仍可運作。適合：暫停選單、切換到編輯器操作。

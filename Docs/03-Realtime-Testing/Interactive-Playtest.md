@@ -31,6 +31,7 @@ return {"x": int(p.x), "y": int(p.y)}
 2. `godot_editor_edit open_scene` 吃的是 `params: {"path": ...}`——傳 `scene` 會報 `INVALID_ARGUMENT: path required`。只有 `godot_game play` 吃 `scene`。
    `play` 永遠明確傳 scene（`res://...` 或 `"main"`），不要跑「editor 現在開著的那個」。
    等 `runtime_ready=true`（否則 poll `godot_game status`），再驗證預期的 in-world state（例如 menu hidden + player node 存在）才開始驅動 input。
+   `play` 後等 frame loop 真的在跑（poll `Engine.get_process_frames() > 0`）再注入 input；restart 後 sim 預設 UNPAUSED、會在 round-trip 之間繼續推進——量測前先 pause。
 3. Logs：`godot_log get` / `godot_log errors`。Eval 是 escape hatch（`find_child`、signal 列表、`get()` exports）。
 
 ---
@@ -49,7 +50,7 @@ return {"x": int(p.x), "y": int(p.y)}
 ]}}
 ```
 
-不要拆成兩個獨立的 press / release calls。menu 淡入期間的第二次 click 會 miss（回 `ok` 不代表命中）——menu walk 一次 `execute` 只送一個 click，下一個 click 前先 probe 目標 dialog/submenu 是否已建好。
+不要拆成兩個獨立的 press / release calls。menu 淡入期間的第二次 click 會 miss（回 `ok` 不代表命中）——menu walk 一次 `execute` 只送一個 click，下一個 click 前先 probe 目標 dialog/submenu 是否已建好。目標 rect 要在 layout 落定後解——**下一個 call** 再讀並 poll 到數值重複，不要用啟動初期的座標。
 
 ### HOVER `<node_path>`
 
@@ -87,12 +88,14 @@ return {"x": int(p.x), "y": int(p.y)}
 - **Pid stamp**：verification eval 帶 `"pid": OS.get_process_id()`，對照 `godot_game instances`。兩個長一樣的 lobby 會讓 misrouted call 看起來成功，pid 不會說謊。最小化的 window 顯示 stale preview——注入的 input 打的是 in-engine viewport，跟 window state 無關。
 - **Closed-loop**：frame rate 會飄，key 按 N 秒走多遠不可預測——每次 drive 後都把 state 讀回來。
 - **Sequence timeout = 查 frame loop，不是查 plugin**：`input sequence` 會在 steps 之間 await `process_frame`，所以 loop stalled 時 sequence timeout、但 plain `eval` 還活著（debugger channel 是分開服務的）。診斷：讀兩次 `Engine.get_process_frames()`——沒前進就是 stalled。解法只有 `godot_game stop` + `play`。`frame_delay: 0` 跳過 await，但 press+release 落在同一 frame、click 不會註冊——只能當 probe。
-- **Eval 禁止 `for`/`while`**——會 timeout。用 `map`/`filter` 或單節點存取；每個 eval 盡量只放單一 statement（statement-level 的 `if`/`for` mutation 也可能 pin）。Broad traversal 也會超時（幾百個節點的 `find_children("*", "MeshInstance3D", true, false)` 曾超過 15s）——scope 到最小 subtree，結果用 `slice(0, N)`。呼叫前先確認 method 真的在該 node 上（不存在的 facade method 會像壞 body 一樣 pin；hover 讀取用 `get_tree().root`，eval 節點沒有 `get_viewport()` context）。
+- **Eval 禁止 `for`/`while`**——會 timeout。用 `map`/`filter` 或單節點存取；每個 eval 盡量只放單一 statement（statement-level 的 `if`/`for` mutation 也可能 pin）。Broad traversal 也會超時（幾百個節點的 `find_children("*", "MeshInstance3D", true, false)` 曾超過 15s）——scope 到最小 subtree，結果用 `slice(0, N)`。呼叫前先確認 method 真的在該 node 上（不存在的 facade method 會像壞 body 一樣 pin；hover 讀取用 `get_tree().root`，eval 節點沒有 `get_viewport()` context）。只有真正的 autoload 單例能用裸名（一般 scene node 要 `get_node("/root/...")`）；不要在 eval 內 `OS.delay_msec` 阻塞主執行緒（等待在 calls 之間做）；缺 key 的 Dictionary 存取或 `null` deref 一樣會 pin；`section_json` 也是已知 timeout body；`result: null` + `ok: true` = body 中途 errored。
 - **Eval TIMEOUT 通常 = body errored，不是 bridge hung**：拼錯的 function 會回 15s timeout，真正的 error 在 `godot_log errors` 裡。每次 timeout 先查 log 再重試。也不要在 eval 碰 `MeshInstance3D.mesh`（render-thread contention 會 stall）；偏好 transforms、`is_position_in_frustum`、physics raycast、screenshots。
 - **`play`/launch 時序**：不要在 `godot_game play` 的同一個 execute block 發 eval（會 race attach：`RUNTIME_NOT_CONNECTED`），先讀 `status`；sector launch 後 deferred UI work 會讓單一 statement 的 eval 也可能 timeout——先 poll 一個 trivial eval 再繼續。
 - **C# 節點屬性**：GDScript eval 裡直接 `rig.PitchDegrees` 會失敗，用 `rig.get("PitchDegrees")` / `rig.set("PitchDegrees", v)`。
 - **Input 下一幀才派發**——hover/drag/visibility 永遠下一個 call 再查，同一個 call 查不到。
 - **Node 名含空格**（如 `"Weapon - 0"`）——`get_node()` 裡要 quote。同名 node 可能在多個 container 各有一份——永遠用 full container path，不要 bare recursive `find_child`。
+- **Host facade 重入**：dialog open/close 或 `shown()` callback 期間呼叫 host facade 會 panic「already bound」並卡死 UI——轉場後等一拍、callback 用 `call_deferred`、狀態改讀節點 `visible`。Mirrored/derived state（HUD JSON 等）可能落後 1-2 個 pump——事件看似沒觸發前先重驗。
+- **世界輸入**：放置/破壞只能走 `godot_input`（合成 `push_input` 只驅動 Control 點擊，世界放置路徑不吃）；注入前確認沒有 dialog 壓在世界畫面上、sim 不在 paused；`tile_to_screen` 等相機 transform 在 frame 結尾才更新——要在移動相機後的**下一個** call 讀。開場游標停在視窗邊緣時 edge-pan 相機會漂移——先 park 游標+重新置中再解座標。
 
 ---
 

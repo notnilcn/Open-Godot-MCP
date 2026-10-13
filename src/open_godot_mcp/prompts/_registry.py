@@ -42,6 +42,8 @@ Screenshots are fallback / final visual verification only.
    Always pass `play scene={scene_arg} {mode}` explicitly — never rely on whatever scene is open.
    Wait for `runtime_ready=true` (else poll `godot_game status`); never issue an eval in the same execute block as
    `play` (it races the attach — read `status` first), and after a sector/level launch wait/poll before UI evals.
+   A restarted game is UNPAUSED and advances while you compose calls — wait until the loop actually pumps
+   (`Engine.get_process_frames() > 0`, poll) before the first input, and pause before step/load measurements.
 3. Verify the expected in-world state before driving input (e.g. menu hidden + player node exists), pid-stamped
    (see Standing rules). Logs: `godot_log get` / `godot_log errors`.
 
@@ -89,13 +91,24 @@ and confirm it is the target (or its child). Never `get_viewport().get_mouse_pos
 - Screenshots that never change: `Engine.get_frames_drawn()` pinned while `Time.get_ticks_msec()` advances usually means render
   is frozen — BUT for the editor-embedded game a pinned counter proves nothing either way (seen pinned at 2 with live captures, and stale boot-menu captures with healthy status fps): cross-check capture content against structured state. Call `get_window().grab_focus()` (not deprecated `move_to_foreground()`).
 - No `for`/`while` in eval (timeouts) — use `map`/`filter` or single-node access; scope `find_children` narrowly and
-  slice results. Known-timeout bodies: `campaign_views_json`, `MindRender.get_stats()` (sector loaded), `tile_blocks()` + loop, `JSON.parse_string(get_state_json())` + filter, lambdas over mixed rows, for-loops over dialog children — query one known node per eval and prefer a single statement; a statement-level if/for that mutates can pin. Keep every `var` at the top level (nested `var` in `if` errors). A method the node does not expose (wrong facade, removed fn) errors and pins like any bad body, and Rust `pub fn` without `#[func]` is not eval-reachable — check `has_method`/the exposing class first; read hover from `get_tree().root` (not `get_viewport()`). Budget is 15 s and a timed-out call keeps running and blocks later evals — chunk big steps and poll. An eval TIMEOUT usually means the body errored — check `godot_log errors` before retrying.
+  slice results. Known-timeout bodies: `campaign_views_json`, `MindRender.get_stats()` (sector loaded), `tile_blocks()` + loop, `JSON.parse_string(get_state_json())` + filter, lambdas over mixed rows, for-loops over dialog children — query one known node per eval and prefer a single statement; a statement-level if/for that mutates can pin. Keep every `var` at the top level (nested `var` in `if` errors). A method the node does not expose (wrong facade, removed fn) errors and pins like any bad body, and Rust `pub fn` without `#[func]` is not eval-reachable — check `has_method`/the exposing class first; read hover from `get_tree().root` (not `get_viewport()`). Only autoload
+  singletons resolve as bare identifiers in an eval body (scene nodes need `get_node("/root/...")`); never block the
+  main thread with `OS.delay_msec` (wait between calls); a missing Dictionary key or null deref pins like any bad body;
+  `section_json` is also a known-timeout body; a null result with `ok: true` means the body errored.
+  Budget is 15 s and a timed-out call keeps running and blocks later evals — chunk big steps and poll. An eval TIMEOUT usually means the body errored — check `godot_log errors` before retrying.
   Never `await` inside an eval body, and never return multi-MB state dumps through the bridge (stash with `set_meta`,
   read slices with `String.find/substr`). Avoid touching `MeshInstance3D.mesh` in eval. C# props via `get()`/`set()`
   (e.g. `rig.get("PitchDegrees")`).
 - After a discrete press/release, flush with `Input.flush_buffered_events()` in an eval and assert the target state in
   that same eval — an unflushed click sits in the input buffer and looks like a dead UI. A world press inside a visible
-  STOP-filter Control is dropped (known traps: paused banner at viewport center, HUD hints full-screen panel, LoadingLayer loading overlay — check `io_pending`/step to drain; an OverlayLayer fragment Button can hover yet never activate — fallback is emitting `pressed`); probe `gui_get_hovered_control()` before suspecting the input path.
+  STOP-filter Control is dropped (known traps: paused banner at viewport center, HUD hints full-screen panel, LoadingLayer loading overlay — check `io_pending`/step to drain; it also eats keyboard toggles like Escape, wait for it to hide before pausing/opening dialogs; an OverlayLayer fragment Button can hover yet never activate — fallback is emitting `pressed`); probe `gui_get_hovered_control()` before suspecting the input path.
+- Dialog/host facades: calling back into a host facade while it is mid-build (dialog open/close, `shown()` callbacks) can
+  panic "already bound" and wedge the UI — settle a beat after dialog transitions, defer callbacks, read the node's
+  `visible` instead; mirrored/derived state (HUD JSON) can lag 1-2 pumps — re-probe before concluding an event never fired.
+- World input goes through `godot_input` only (synthetic `push_input` drives Control clicks, not the world placement path);
+  before world input check no dialog lingers over the world and the sim is not paused; park a window-edge OS pointer and
+  re-center before resolving world coordinates (edge-pan cameras drift every frame); resolve rects in a later call —
+  layout settles late, so poll the rect until it repeats before clicking.
 - When a recipe fails, check in order: (1) target + parent chain `visible`, (2) `gui_get_hovered_control()` after a
   motion to the same point, (3) `godot_log errors`, (4) only then `godot_screenshot game`.
 

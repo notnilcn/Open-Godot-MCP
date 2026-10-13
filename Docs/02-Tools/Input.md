@@ -32,6 +32,15 @@
 > - 離散 press/release 後，在同一個 eval 內 `Input.flush_buffered_events()` 並斷言目標狀態——未 flush 的輸入會留在 accumulated buffer，看起來像壞掉的 UI。
 > - menu 淡入期間不要在同一個 `execute` 內連點：後續 click 可能 miss（回 `ok` 不代表命中），一次只送一個 click 並 probe 目標節點。
 
+> **世界輸入 / 時序注意**：
+> - 世界放置/破壞只能走 `godot_input`（真實游標）；合成 `get_viewport().push_input()` 對 Control 點擊有效，但世界放置路徑不吃。
+> - 注入世界輸入前先確認沒有 dialog 殘留在世界畫面上（resume 後常見）、sim 不在 paused（讀 paused 旗標/dialog 節點，不要只看畫面）。
+> - 目標 rect 要在 layout 落定後再解——下一個 call 再讀並 poll 到數值重複（menu 等容器的 rows 在啟動初期會移位）。
+> - 相機/畫布 transform 在 frame 結尾才更新：`tile_to_screen`/`screen_to_tile` 要在移動相機後的**下一個** call 讀。
+> - 開場/重啟後 OS 游標可能停在視窗邊緣，帶 edge-pan 的相機會逐幀漂移——先把游標 park 到畫面中央並重新置中（能停用相機自動平移就停用）再解世界座標。
+> - hold-latched 模式可能需要 KeyUp edge 才會解除；注入的 press 沒 latch 時，改用遊戲自己的 API（`Input.push_event(...)`/`inject_key`）。
+> - loading overlay 不只吃點擊，也吃鍵盤（Escape 會落在 loading 分支）——先 drain IO、等 overlay 隱藏再開 dialog。
+
 > **參數格式**：
 > - `key`：plain key 名，如 `"Tab"`、`"E"`、`"Up"`、`"Space"`——**不要**用 Godot enum 常數（`"KEY_TAB"` 會靜默 no-op）。`modifiers` 另用字串陣列表示
 > - `modifiers`：字串陣列，如 `["ctrl", "shift", "alt", "meta"]`

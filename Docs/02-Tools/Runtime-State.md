@@ -36,7 +36,7 @@
 
 > **用途**：grant weapon、skip to wave 3、spawn test bot——不需在遊戲碼內 baked debug hooks。
 
-> **`eval` 的求值上下文**：`code` 在遊戲進程的 SceneTree 上下文內求值，`self` 指向 SceneTree 的 root viewport（即 `get_tree().root`）。可透過 autoload 單例名稱直接存取（如 `Player`、`GameState`，前提是它們是 autoload 或 root 的子節點），也可用 `get_tree()`、`Engine` 等全域 API。範例：`Player.add_to_group('mcp_watch')`（`Player` 是 autoload）、`get_tree().get_nodes_in_group('enemy')`。
+> **`eval` 的求值上下文**：`code` 在遊戲進程的 SceneTree 上下文內求值，`self` 指向 SceneTree 的 root viewport（即 `get_tree().root`）。可用 `get_tree()`、`Engine` 等全域 API，也可透過**真正的 autoload 單例**裸名存取（如 `Player`、`GameState`）。一般 scene node（例如 UI 群組、`/root` 下的子節點）沒有裸名——請一律用 `get_node("/root/...")`，打錯的裸名會 error 並 pin 住 frame loop。範例：`Player.add_to_group('mcp_watch')`（`Player` 是 autoload）、`get_tree().get_nodes_in_group('enemy')`、`get_node("/root/Main/UI")`。
 
 > **`eval` 座標回傳**：要拿座標給 `godot_input` 用時，回傳 flat `{"x","y"}` dict（`return {"x": int(p.x), "y": int(p.y)}`）——raw `Vector2` 在 bridge 編碼下不可靠，會靜默 corrupt 座標。Nested dict OK。
 
@@ -46,6 +46,12 @@
 > - 不要碰 `MeshInstance3D.mesh`（render-thread contention 會 stall）；偏好 transforms、`is_position_in_frustum`、physics raycast、screenshots。
 > - 需含空格的 node 名（如 `"Weapon - 0"`）要在 `get_node()` 裡 quote；同名 node 在多 container 各有一份時用 full container path，不要 bare `find_child`。
 > - C# export 屬性用 `get()`/`set()`（如 `rig.get("PitchDegrees")`），直接 member syntax 會失敗。
+> - 不要在 eval 內阻塞主執行緒（`OS.delay_msec`/sleep）：`_process` 與遊戲時鐘都會停——等待請在 tool call 之間做。
+> - 缺 key 的 Dictionary 存取、猜到路徑的 null deref（`get_node_or_null(...).x`）、`get_meta()` 缺 key 都算 error，會像壞 body 一樣 pin——用 `has()`/`get()`、`is_instance_valid()`、`find_children`。
+> - `section_json`（campaign/research payload）也是已知 timeout body。
+> - 呼叫 host facade 時若對方正在 dialog build 流程中（open/close、`shown()` callback）會 panic「Gd<T>::bind() failed, already bound」——dialog 轉場後先等一拍，callback 用 `call_deferred`，狀態改讀節點 `visible`。
+> - mirrored/derived state（HUD JSON 等）可能落後 1-2 個 pump——事件看似沒觸發前先重驗。
+> - `result: null` 且 `ok: true` 通常代表 body 中途 errored——先查 `godot_log errors`。
 > - 完整互動式 recipes 見 [../03-Realtime-Testing/Interactive-Playtest.md](../03-Realtime-Testing/Interactive-Playtest.md)。
 
 > **C# Godot**：`eval` 不適用於 C# 專案（C# 是編譯式）。見 [../08-CSharp-Support/Compatibility.md](../08-CSharp-Support/Compatibility.md)。
