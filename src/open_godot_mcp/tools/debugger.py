@@ -17,5 +17,8 @@ def register_debugger_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_debugger",
-        "DAP debugger. Actions: set_breakpoint,remove_breakpoint,resume,continue,step_over,step_into,step_out,stack_trace,variables,evaluate,list_breakpoints,sessions.",
+        "DAP debugger. Actions: set_breakpoint,remove_breakpoint,resume,continue,step_over,step_into,step_out,stack_trace,variables,evaluate,list_breakpoints,sessions. "
+        "A paused session pins the game's frame loop — an eval that errored or timed out can trip break-on-error: sessions shows paused:true, "
+        "stack_trace points into gdscript://; while paused, godot_input sequences time out and screenshots repeat stale, but plain godot_exec evals still answer. "
+        "resume re-breaks or no-ops — recover with godot_game stop+play.",
     )

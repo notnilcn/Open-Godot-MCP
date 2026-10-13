@@ -134,5 +134,5 @@ def register_filesystem_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_log",
-        "Log access. Actions: get(source?,count?,offset?,since_ms?,instance?),errors(max?,include_warnings?),clear. Game log entries carry an instance field (1-based PIE instance index) when the editor runs multiple game instances; instance=N filters to it.",
+        "Log access. Actions: get(source?,count?,offset?,since_ms?,instance?),errors(max?,include_warnings?),clear. Game log entries carry an instance field (1-based PIE instance index) when the editor runs multiple game instances; instance=N filters to it. get returns the OLDEST N entries, not the newest — ask count >= buffer size for tails (errors is unaffected). clear right after boot loses the boot banner while an idling client emits nothing — capture get before clearing.",
     )

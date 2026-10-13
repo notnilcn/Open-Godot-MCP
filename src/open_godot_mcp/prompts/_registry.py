@@ -40,7 +40,8 @@ Screenshots are fallback / final visual verification only.
 1. `godot_health check` first. On BRIDGE_NOT_CONNECTED, launch the editor (the bridge auto-loads with it).
 2. `godot_editor_edit open_scene` takes `params: {{"path": ...}}` (NOT `scene`); only `godot_game play` takes `scene`.
    Always pass `play scene={scene_arg} {mode}` explicitly — never rely on whatever scene is open.
-   Wait for `runtime_ready=true` (else poll `godot_game status`).
+   Wait for `runtime_ready=true` (else poll `godot_game status`); never issue an eval in the same execute block as
+   `play` (it races the attach — read `status` first), and after a sector/level launch wait/poll before UI evals.
 3. Verify the expected in-world state before driving input (e.g. menu hidden + player node exists), pid-stamped
    (see Standing rules). Logs: `godot_log get` / `godot_log errors`.
 
@@ -52,6 +53,8 @@ Screenshots are fallback / final visual verification only.
 2. `godot_input` `sequence` — ONE call, press+release (default `frame_delay: 1` is what makes it land):
    `params: {{"steps": [{{"type": "mouse_button", "params": {{"button": "MOUSE_BUTTON_LEFT", "pressed": true, "position": {{"x": X, "y": Y}}, "coords": "viewport"}}}}, {{"type": "mouse_button", "params": {{"button": "MOUSE_BUTTON_LEFT", "pressed": false, "position": {{"x": X, "y": Y}}, "coords": "viewport"}}}}]}}`
    Do NOT split into separate press/release calls. Always `coords: "viewport"`.
+   Menu walks go one click per execute round-trip while a submenu fades — a returned `ok` does not prove the click
+   landed; probe the expected dialog/submenu node before the next click.
 
 ### HOVER <node_path>
 
@@ -68,8 +71,9 @@ and confirm it is the target (or its child). Never `get_viewport().get_mouse_pos
 
 - PRESS `<key>`: `godot_input key` press+release. Plain names (`Tab`, `E`, `Up`) — NOT `KEY_TAB` (silently no-ops).
 - HOLD `<key>`: press `pressed:true` → sleep locally (game keeps simulating) → release. Always re-read state after
-  (closed-loop); never assume a hold duration landed an exact angle/distance.
-- TYPE `<path> <text>`: eval `get_node("<path>").grab_focus()` → `godot_input text`.
+  (closed-loop); never assume a hold duration landed an exact angle/distance. `sequence frame_delay` counts PROCESS frames (wall time), not sim ticks — for exact ticks drive paused + step.
+- WHEEL: no wheel action exists — push InputEventMouseButton WHEEL_UP/DOWN (pressed=true, factor=1.0, position set) through the viewport in eval.
+- TYPE `<path> <text>`: NEVER `godot_input text` (broken: the runtime reuses one InputEventKey for press+release, the engine discards it and the field stays empty). Instead push a FRESH InputEventKey down+up per char in eval, or set `field.text` + emit its `text_changed` signal then click OK with real mouse input.
 
 ### Standing rules
 
@@ -79,10 +83,19 @@ and confirm it is the target (or its child). Never `get_viewport().get_mouse_pos
 - Prove routing with a pid stamp: include `OS.get_process_id()` in verification evals vs `godot_game instances`.
 - Drive closed-loop, never by wall-clock dead-reckoning. Injected input dispatches NEXT frame — verify in a follow-up call.
 - `sequence` timeout while plain `eval` still answers = stalled frame loop (sequence awaits `process_frame`; eval uses
-  the debugger channel). Diagnose: read `Engine.get_process_frames()` twice. Fix: `godot_game stop` + `play`.
+  the debugger channel). Diagnose: read `Engine.get_process_frames()` twice (`Time.get_ticks_msec()` delta proves the
+  process is alive); if frozen, check `godot_debugger sessions` — an errored/timed-out eval trips break-on-error.
+  Fix: `godot_game stop` + `play` (`resume` re-breaks / no-ops).
+- Screenshots that never change: `Engine.get_frames_drawn()` pinned while `Time.get_ticks_msec()` advances usually means render
+  is frozen — BUT for the editor-embedded game a pinned counter proves nothing either way (seen pinned at 2 with live captures, and stale boot-menu captures with healthy status fps): cross-check capture content against structured state. Call `get_window().grab_focus()` (not deprecated `move_to_foreground()`).
 - No `for`/`while` in eval (timeouts) — use `map`/`filter` or single-node access; scope `find_children` narrowly and
-  slice results. An eval TIMEOUT usually means the body errored — check `godot_log errors` before retrying.
-  Avoid touching `MeshInstance3D.mesh` in eval. C# props via `get()`/`set()` (e.g. `rig.get("PitchDegrees")`).
+  slice results. Known-timeout bodies: `campaign_views_json`, `MindRender.get_stats()` (sector loaded), `tile_blocks()` + loop, `JSON.parse_string(get_state_json())` + filter, lambdas over mixed rows, for-loops over dialog children — query one known node per eval and prefer a single statement; a statement-level if/for that mutates can pin. Keep every `var` at the top level (nested `var` in `if` errors). A method the node does not expose (wrong facade, removed fn) errors and pins like any bad body, and Rust `pub fn` without `#[func]` is not eval-reachable — check `has_method`/the exposing class first; read hover from `get_tree().root` (not `get_viewport()`). Budget is 15 s and a timed-out call keeps running and blocks later evals — chunk big steps and poll. An eval TIMEOUT usually means the body errored — check `godot_log errors` before retrying.
+  Never `await` inside an eval body, and never return multi-MB state dumps through the bridge (stash with `set_meta`,
+  read slices with `String.find/substr`). Avoid touching `MeshInstance3D.mesh` in eval. C# props via `get()`/`set()`
+  (e.g. `rig.get("PitchDegrees")`).
+- After a discrete press/release, flush with `Input.flush_buffered_events()` in an eval and assert the target state in
+  that same eval — an unflushed click sits in the input buffer and looks like a dead UI. A world press inside a visible
+  STOP-filter Control is dropped (known traps: paused banner at viewport center, HUD hints full-screen panel, LoadingLayer loading overlay — check `io_pending`/step to drain; an OverlayLayer fragment Button can hover yet never activate — fallback is emitting `pressed`); probe `gui_get_hovered_control()` before suspecting the input path.
 - When a recipe fails, check in order: (1) target + parent chain `visible`, (2) `gui_get_hovered_control()` after a
   motion to the same point, (3) `godot_log errors`, (4) only then `godot_screenshot game`.
 

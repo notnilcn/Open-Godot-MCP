@@ -26,6 +26,12 @@
 
 > **拖曳注意**：只給 `position` 的絕對移動會自動合成 `relative`（引擎靠累積 `relative` 超過拖曳門檻才啟動拖曳；若 `relative` 為 0 拖曳永不開始）。拖曳流程：`mouse_motion` 到起點 → `mouse_button` 按下 → `mouse_motion` 帶 `button_mask` 到終點 → `mouse_button` 放開。另外，root viewport 的 `get_mouse_position()` 讀的是 OS 真實游標，永遠不反映注入位置——驗證注入請用 `gui_get_hovered_control()`。注入事件在下一帧才派發（accumulated input），hover/拖曳狀態要在下一次呼叫再查。
 
+> **`text`/wheel/flush 注意**：
+> - `godot_input text` 目前損壞（同一個 `InputEventKey` 物件在同 frame 內 press+release，事件被丟棄、欄位留空並記 error）；`godot_input key` 不帶 `unicode`，`LineEdit` 會忽略。請用 eval push 全新的 `InputEventKey`（每字元 down+up），或設 `field.text` + emit `text_changed` 後再用真實滑鼠點 OK。
+> - 沒有 wheel action：用 eval push `InputEventMouseButton`（`WHEEL_UP`/`WHEEL_DOWN`，`pressed=true`、`factor=1.0`、`position` 設好）過 viewport。
+> - 離散 press/release 後，在同一個 eval 內 `Input.flush_buffered_events()` 並斷言目標狀態——未 flush 的輸入會留在 accumulated buffer，看起來像壞掉的 UI。
+> - menu 淡入期間不要在同一個 `execute` 內連點：後續 click 可能 miss（回 `ok` 不代表命中），一次只送一個 click 並 probe 目標節點。
+
 > **參數格式**：
 > - `key`：plain key 名，如 `"Tab"`、`"E"`、`"Up"`、`"Space"`——**不要**用 Godot enum 常數（`"KEY_TAB"` 會靜默 no-op）。`modifiers` 另用字串陣列表示
 > - `modifiers`：字串陣列，如 `["ctrl", "shift", "alt", "meta"]`

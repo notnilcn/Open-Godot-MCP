@@ -19,7 +19,9 @@ def register_batch_tools(mcp: FastMCP, ctx: ServerContext) -> None:
         mcp,
         ctx,
         "godot_batch",
-        "Batch-execute multiple tool calls in one round-trip (gated). Action: execute(operations:[{tool,action,params}]). No nesting.",
+        "Batch-execute multiple tool calls in one round-trip (gated). Action: execute(operations:[{tool,action,params}]). No nesting. "
+        "Placement drags batch fine; for break/sweep drags do not batch the tail — a batched final masked mouse_motion plus release can coalesce "
+        "and the tile under the final position survives. Send those last two events as separate godot_input calls.",
         is_write=True,
     )
     async def godot_batch(action: str, params: dict | None = None) -> dict:

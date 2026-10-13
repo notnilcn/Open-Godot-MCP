@@ -49,7 +49,7 @@ return {"x": int(p.x), "y": int(p.y)}
 ]}}
 ```
 
-不要拆成兩個獨立的 press / release calls。
+不要拆成兩個獨立的 press / release calls。menu 淡入期間的第二次 click 會 miss（回 `ok` 不代表命中）——menu walk 一次 `execute` 只送一個 click，下一個 click 前先 probe 目標 dialog/submenu 是否已建好。
 
 ### HOVER `<node_path>`
 
@@ -73,7 +73,11 @@ return {"x": int(p.x), "y": int(p.y)}
 
 ### TYPE `<node_path> <text>`
 
-Eval `get_node("<node_path>").grab_focus()` → `godot_input text`。
+**不要用 `godot_input text`**（目前損壞）：runtime 在同一個 frame 內對同一個 `InputEventKey` 物件做 press + release，引擎會丟棄該事件並記 error，欄位保持空白；`godot_input key` 也不帶 `unicode`，`LineEdit` 會忽略。改用 eval 逐字元 push **全新的** `InputEventKey`（down + up；`keycode`/`physical_keycode` 用 `OS.find_keycode_from_string(ch)`，`unicode = ch.unicode_at(0)`），或設 `field.text` 後 emit 它的 `text_changed`、再用真實滑鼠點 OK。
+
+### WHEEL
+
+沒有 wheel action：在 eval 裡 push `InputEventMouseButton`（`button_index = MOUSE_BUTTON_WHEEL_UP`/`DOWN`，`pressed = true`，`factor = 1.0`，`position` 設好）過 viewport。
 
 ---
 
@@ -83,8 +87,9 @@ Eval `get_node("<node_path>").grab_focus()` → `godot_input text`。
 - **Pid stamp**：verification eval 帶 `"pid": OS.get_process_id()`，對照 `godot_game instances`。兩個長一樣的 lobby 會讓 misrouted call 看起來成功，pid 不會說謊。最小化的 window 顯示 stale preview——注入的 input 打的是 in-engine viewport，跟 window state 無關。
 - **Closed-loop**：frame rate 會飄，key 按 N 秒走多遠不可預測——每次 drive 後都把 state 讀回來。
 - **Sequence timeout = 查 frame loop，不是查 plugin**：`input sequence` 會在 steps 之間 await `process_frame`，所以 loop stalled 時 sequence timeout、但 plain `eval` 還活著（debugger channel 是分開服務的）。診斷：讀兩次 `Engine.get_process_frames()`——沒前進就是 stalled。解法只有 `godot_game stop` + `play`。`frame_delay: 0` 跳過 await，但 press+release 落在同一 frame、click 不會註冊——只能當 probe。
-- **Eval 禁止 `for`/`while`**——會 timeout。用 `map`/`filter` 或單節點存取。Broad traversal 也會超時（幾百個節點的 `find_children("*", "MeshInstance3D", true, false)` 曾超過 15s）——scope 到最小 subtree，結果用 `slice(0, N)`。
+- **Eval 禁止 `for`/`while`**——會 timeout。用 `map`/`filter` 或單節點存取；每個 eval 盡量只放單一 statement（statement-level 的 `if`/`for` mutation 也可能 pin）。Broad traversal 也會超時（幾百個節點的 `find_children("*", "MeshInstance3D", true, false)` 曾超過 15s）——scope 到最小 subtree，結果用 `slice(0, N)`。呼叫前先確認 method 真的在該 node 上（不存在的 facade method 會像壞 body 一樣 pin；hover 讀取用 `get_tree().root`，eval 節點沒有 `get_viewport()` context）。
 - **Eval TIMEOUT 通常 = body errored，不是 bridge hung**：拼錯的 function 會回 15s timeout，真正的 error 在 `godot_log errors` 裡。每次 timeout 先查 log 再重試。也不要在 eval 碰 `MeshInstance3D.mesh`（render-thread contention 會 stall）；偏好 transforms、`is_position_in_frustum`、physics raycast、screenshots。
+- **`play`/launch 時序**：不要在 `godot_game play` 的同一個 execute block 發 eval（會 race attach：`RUNTIME_NOT_CONNECTED`），先讀 `status`；sector launch 後 deferred UI work 會讓單一 statement 的 eval 也可能 timeout——先 poll 一個 trivial eval 再繼續。
 - **C# 節點屬性**：GDScript eval 裡直接 `rig.PitchDegrees` 會失敗，用 `rig.get("PitchDegrees")` / `rig.set("PitchDegrees", v)`。
 - **Input 下一幀才派發**——hover/drag/visibility 永遠下一個 call 再查，同一個 call 查不到。
 - **Node 名含空格**（如 `"Weapon - 0"`）——`get_node()` 裡要 quote。同名 node 可能在多個 container 各有一份——永遠用 full container path，不要 bare recursive `find_child`。
@@ -111,7 +116,7 @@ var hit = cam.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryPar
 return {"pid": OS.get_process_id(), "oy": o.y, "hit": hit}
 ```
 
-Visual-only 幾何（水面、天空、某些特效層）通常沒有 collision——ray 穿過去打到 nothing 不代表那裡沒畫東西。最強形式是跟 visibility toggle 合併：藏起 suspect node 後 suspect pixels pixel-identical = 該 node 對這些 pixels 零貢獻。一個 eval body 可放多條 sequential statements（只有 `for`/`while` 會 timeout）。
+Visual-only 幾何（水面、天空、某些特效層）通常沒有 collision——ray 穿過去打到 nothing 不代表那裡沒畫東西。最強形式是跟 visibility toggle 合併：藏起 suspect node 後 suspect pixels pixel-identical = 該 node 對這些 pixels 零貢獻。eval body 越單純越好：單一 statement 最安全，`for`/`while` 一律不放，重內容或 mutation 的 statement 也可能 pin。
 
 ---
 
